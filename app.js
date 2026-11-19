@@ -4,7 +4,7 @@
 
 // ====== CONFIGURACIÓN ======
 const SUPABASE_URL = "https://rwhxxhlwdepayzmtityx.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_2r4ZDzvuRnSi6PhNtJOkJA_G9EKfqdd";
+const SUPABASE_ANON_KEY = "sb_publishable_s2pX43RgvXgUeBxPE805Zg_i7aYz5pN";
 const PUBLIC_URL = "https://servidortaller83.github.io/almacenamiento-taller/";
 // ===========================
 
