@@ -4,8 +4,8 @@
 
 // ====== CONFIGURACIÓN ======
 const SUPABASE_URL = "https://rwhxxhlwdepayzmtityx.supabase.co";
-const SUPABASE_ANON_KEY = "PEGA_AQUI_TU_ANON_KEY";
-const PUBLIC_URL = ""; // Pon aquí tu URL de GitHub Pages, p. ej. "https://tu-usuario.github.io/almacenamiento-taller/"
+const SUPABASE_ANON_KEY = "sb_publishable_2r4ZDzvuRnSi6PhNtJOkJA_G9EKfqdd";
+const PUBLIC_URL = "https://servidortaller83.github.io/almacenamiento-taller/";
 // ===========================
 
 const PROGRAMMER_CODE = "3342";
