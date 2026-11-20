@@ -9,9 +9,9 @@ const PUBLIC_URL = "https://servidortaller83.github.io/almacenamiento-taller/";
 // ===========================
 
 const PROGRAMMER_CODE = "955664";
-const CATEGORIES = ["Herramientas", "Consumibles", "Recambios", "Pintura y químicos", "EPI (seguridad)", "Equipos"];
-const LOCATIONS = ["Taller principal", "Almacén"];
-const FILTERS = ["Todas", ...CATEGORIES];
+// Valores por defecto; se sustituyen por los de Supabase al arrancar
+let CATEGORIES = ["Herramientas", "Consumibles", "Recambios", "Pintura y químicos", "EPI (seguridad)", "Equipos"];
+let LOCATIONS = ["Taller principal", "Almacén"];
 const FDS_BUCKET = "fds";
 const NAV_FOR_VIEW = {
   home: "home", form: "home", scan: "scan",
@@ -48,6 +48,15 @@ const fromRow = (r) => ({
   location: r.location || LOCATIONS[0], stock: r.stock, minStock: r.min_stock,
   fdsUrl: r.fds_url || null, history: r.history || [],
 });
+
+async function loadLists() {
+  const [c, l] = await Promise.all([
+    sb.from("categories").select("name").order("position", { ascending: true }),
+    sb.from("locations").select("name").order("position", { ascending: true }),
+  ]);
+  if (!c.error) CATEGORIES = c.data.map((r) => r.name);
+  if (!l.error) LOCATIONS = l.data.map((r) => r.name);
+}
 
 async function loadProducts() {
   const { data, error } = await sb.from("products").select("*").order("created_at", { ascending: true });
@@ -87,6 +96,7 @@ async function refresh() {
   if (ui.loading || ui.view === "form" || ui.view === "scan") return;
   if (document.activeElement && document.activeElement.tagName === "INPUT") return;
   try {
+    await loadLists();
     await loadProducts();
     render();
   } catch (e) { /* sin conexión: seguimos con los datos actuales */ }
@@ -238,7 +248,8 @@ function renderProgrammer() {
         <strong>✔ Modo programador activo</strong>
         <p>Puedes editar y eliminar productos desde su ficha.</p>
         <button class="link" data-action="lock">Cerrar sesión de programador</button>
-      </div>`;
+      </div>
+      ${renderListManager()}`;
   }
   return `
     <div class="card prog">
@@ -281,7 +292,7 @@ function renderInventory() {
         <button class="chip ${ui.locFilter === l ? "on" : ""}" data-action="locFilter" data-value="${esc(l)}">${esc(l)}</button>`).join("")}
     </div>
     <div class="chips">
-      ${FILTERS.map((f) => `
+      ${["Todas", ...CATEGORIES].map((f) => `
         <button class="chip ${ui.filter === f ? "on" : ""}" data-action="filter" data-value="${esc(f)}">${esc(f)}</button>`).join("")}
     </div>
     <div id="inv-list">${inventoryList()}</div>`;
@@ -492,6 +503,76 @@ function openFromUrl() {
   render();
 }
 
+/* ---------- Gestión de categorías y ubicaciones (programador) ---------- */
+function renderListManager() {
+  return `
+    <div class="card">
+      <strong>Categorías</strong>
+      ${listRows("categories", CATEGORIES)}
+      <div class="row" style="margin-top:10px">
+        <input id="new-cat" placeholder="Nueva categoría">
+        <button class="btn primary small" data-action="addCat">Añadir</button>
+      </div>
+    </div>
+    <div class="card">
+      <strong>Ubicaciones</strong>
+      ${listRows("locations", LOCATIONS)}
+      <div class="row" style="margin-top:10px">
+        <input id="new-loc" placeholder="Nueva ubicación">
+        <button class="btn primary small" data-action="addLoc">Añadir</button>
+      </div>
+    </div>`;
+}
+
+function listRows(table, items) {
+  return items.map((n) => `
+    <div class="row" style="margin-top:8px">
+      <input value="${esc(n)}">
+      <button class="btn outline small" data-action="renameList" data-table="${table}" data-value="${esc(n)}">Guardar</button>
+      <button class="btn outline danger small" data-action="deleteList" data-table="${table}" data-value="${esc(n)}">Borrar</button>
+    </div>`).join("");
+}
+
+function listKey(table) { return table === "categories" ? "category" : "location"; }
+function listArr(table) { return table === "categories" ? CATEGORIES : LOCATIONS; }
+
+async function addList(table, value) {
+  const name = String(value || "").trim();
+  if (!name) return alert("Escribe un nombre.");
+  if (listArr(table).includes(name)) return alert("Ya existe una con ese nombre.");
+  const { error } = await sb.from(table).insert({ name, position: listArr(table).length + 1 });
+  if (error) return alert("No se pudo añadir: " + error.message);
+  await loadLists();
+  render();
+}
+
+async function renameList(table, oldName, value) {
+  const name = String(value || "").trim();
+  if (!name || name === oldName) return render();
+  if (listArr(table).includes(name)) return alert("Ya existe una con ese nombre.");
+  const key = listKey(table);
+  const { error: e1 } = await sb.from(table).update({ name }).eq("name", oldName);
+  if (e1) return alert("No se pudo renombrar: " + e1.message);
+  const { error: e2 } = await sb.from("products").update({ [key]: name }).eq(key, oldName);
+  if (e2) alert("Renombrada, pero no se pudieron actualizar los productos: " + e2.message);
+  if (ui.filter === oldName) ui.filter = "Todas";
+  if (ui.locFilter === oldName) ui.locFilter = "Todos";
+  await loadLists();
+  await loadProducts();
+  render();
+}
+
+async function deleteList(table, name) {
+  const key = listKey(table);
+  const used = state.products.filter((p) => p[key] === name).length;
+  if (used) return alert(`No se puede borrar: hay ${used} producto(s) con "${name}". Cámbialos antes.`);
+  if (!confirm(`¿Borrar "${name}"?`)) return;
+  const { error } = await sb.from(table).delete().eq("name", name);
+  if (error) return alert("No se pudo borrar: " + error.message);
+  await loadLists();
+  render();
+}
+
 /* ---------- Acciones ---------- */
 function moveQty(id, sign, type) {
   const p = findProduct(id);
@@ -604,6 +685,10 @@ document.addEventListener("click", (e) => {
       if (p) changeStock(id, Math.max(1, p.minStock - p.stock), "Compra");
       return;
     }
+    case "addCat": return addList("categories", $("#new-cat").value);
+    case "addLoc": return addList("locations", $("#new-loc").value);
+    case "renameList": return renameList(el.dataset.table, el.dataset.value, el.parentElement.querySelector("input").value);
+    case "deleteList": return deleteList(el.dataset.table, el.dataset.value);
     case "delete": return deleteProduct(id);
     case "manualSearch": return handleCode($("#manual-code").value);
     case "retryCam": return navigate("scan");
@@ -675,6 +760,7 @@ document.addEventListener("change", async (e) => {
 /* ---------- Arranque ---------- */
 async function init() {
   try {
+    await loadLists().catch(() => {});
     await loadProducts();
   } catch (e) {
     ui.loadError = "No se pudo conectar con la base de datos. Revisa SUPABASE_URL y SUPABASE_ANON_KEY en app.js.";
