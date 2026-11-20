@@ -255,15 +255,19 @@ function renderScan() {
   return `
     <h2>Escanear producto</h2>
     <div class="scanner-box"><div id="reader"></div></div>
-    <p class="hint">${esc(ui.scanMsg || "Apunta la cámara al código QR del producto.")}</p>
+    <p class="hint">${esc(ui.scanMsg || "Apunta la cámara al QR o escribe el nombre del producto abajo.")}</p>
     <button class="btn primary" data-action="retryCam">▣ Activar / reintentar cámara</button>
     <label class="btn outline" style="display:block;text-align:center;cursor:pointer;box-sizing:border-box">
       📷 Hacer foto del QR
       <input type="file" accept="image/*" capture="environment" data-file="qr" hidden>
     </label>
     <div id="qr-file" hidden></div>
+    ${(ui.scanResults || []).map((p) => `
+      <button class="item" data-go="detail" data-id="${p.id}">
+        <div><strong>${esc(p.name)}</strong><small>${esc(p.code)} · ${esc(p.location)}</small></div>
+      </button>`).join("")}
     <div class="row">
-      <input id="manual-code" placeholder="O escribe el código, ej. TAL-AKKDET">
+      <input id="manual-code" placeholder="Código o nombre, ej. TAL-AKKDET o Taladro">
       <button class="btn primary small" data-action="manualSearch">Buscar</button>
     </div>`;
 }
@@ -330,9 +334,11 @@ function renderDetail() {
 
     <div class="big"><b>${p.stock}</b><span>unidades en stock</span></div>
 
+    <label>Cantidad exacta (solo números)</label>
+    <input id="qty" type="number" inputmode="numeric" min="1" step="1" placeholder="Ej. 12">
     <div class="row2">
-      <button class="btn green" data-action="inc" data-id="${p.id}">+ Sumar uno</button>
-      <button class="btn red" data-action="dec" data-id="${p.id}">− Restar uno</button>
+      <button class="btn green" data-action="addQty" data-id="${p.id}">+ Entrada</button>
+      <button class="btn red" data-action="subQty" data-id="${p.id}">− Salida</button>
     </div>
 
     ${p.fdsUrl
@@ -341,7 +347,7 @@ function renderDetail() {
 
     <div class="qr-card">
       <div id="qr"></div>
-      <small>${esc(p.code)}</small>
+      <small>${esc(p.name)}</small>
     </div>
 
     ${ui.programmer ? `
@@ -459,11 +465,20 @@ function codeFromText(text) {
 }
 
 function handleCode(text) {
-  const code = codeFromText(text);
-  if (!code) return;
-  const p = findByCode(code);
-  if (p) return navigate("detail", { id: p.id });
-  ui.scanMsg = `No existe ningún producto con el código ${code}.`;
+  const raw = String(text).trim();
+  if (!raw) return;
+  const p = findByCode(codeFromText(raw));
+  if (p) { ui.scanResults = []; return navigate("detail", { id: p.id }); }
+  const q = raw.toLowerCase();
+  const matches = state.products.filter((x) => x.name.toLowerCase().includes(q));
+  if (matches.length === 1) { ui.scanResults = []; return navigate("detail", { id: matches[0].id }); }
+  if (matches.length > 1) {
+    ui.scanResults = matches;
+    ui.scanMsg = `Hay ${matches.length} productos con ese nombre. Elige uno:`;
+    return navigate("scan");
+  }
+  ui.scanResults = [];
+  ui.scanMsg = `No existe ningún producto con el código o nombre "${raw}".`;
   navigate("scan");
 }
 
@@ -478,6 +493,14 @@ function openFromUrl() {
 }
 
 /* ---------- Acciones ---------- */
+function moveQty(id, sign, type) {
+  const p = findProduct(id);
+  const n = parseInt($("#qty").value, 10);
+  if (!p || !(n > 0)) return alert("Escribe una cantidad mayor que 0.");
+  if (sign < 0 && n > p.stock) return alert(`Solo hay ${p.stock} en stock.`);
+  changeStock(id, sign * n, type);
+}
+
 function changeStock(id, delta, type) {
   const p = findProduct(id);
   if (!p) return;
@@ -574,8 +597,8 @@ document.addEventListener("click", (e) => {
       ui.draft[el.dataset.field] = Math.max(0, ui.draft[el.dataset.field] + Number(el.dataset.value));
       return render();
     case "save": return saveDraft();
-    case "inc": return changeStock(id, 1, "Entrada");
-    case "dec": return changeStock(id, -1, "Salida");
+    case "addQty": return moveQty(id, 1, "Entrada");
+    case "subQty": return moveQty(id, -1, "Salida");
     case "restock": {
       const p = findProduct(id);
       if (p) changeStock(id, Math.max(1, p.minStock - p.stock), "Compra");
