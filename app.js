@@ -202,7 +202,6 @@ function renderHome() {
   return `
     <section class="stats">
       <div class="stat"><b>${total}</b><span>Productos</span></div>
-      <div class="stat"><b>${units}</b><span>Unidades</span></div>
       <div class="stat"><b>${out}</b><span>Agotados</span></div>
     </section>
 
